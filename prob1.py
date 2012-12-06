@@ -91,7 +91,14 @@ def examineFolder(path):
 		
 	return numBytes, numPublic, numPrivate, numTry, numCatch
 	
+def printOutput(path):
+
+    x = examineFolder(path)
+	print path + '\t' + x[0] + 'bytes' + '\t' + x[1] + 'public' + '\t' + x[2] + 'private' + '\t' + x[3] + 'try' + '\t' + x[4] + 'catch' + '\n'
 	
+	for sub in subDirs(path):
+	    printOutput(path + '/' + sub)
+	    
 
 #print(examineJavaFile(sys.argv[1]))
 
