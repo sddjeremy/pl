@@ -64,35 +64,38 @@ def examineJavaFile(path):
 
 
 def examineFolder(path):
-    numBytes = 0
-    numPublic = 0
-    numPrivate = 0
-    numTry = 0
-    numCatch = 0
-    
-    javaFilez = javaFiles(path)
-    
-    for name in javaFilez:
-        x = examineJavaFile(path + '/' + name)
-        numBytes += x[0]
-        numPublic += x[1]
-        numPrivate += x[2]
-        numTry += x[3]
-        numCatch += x[4]
-        
-    for sub in subDirs(path):
-        y = examineFolder(path + '/' + sub)
-        numBytes += x[0]
-        numPublic += x[1]
-        numPrivate += x[2]
-        numTry += x[3]
-        numCatch += x[4]
-        
-        
-    return numBytes, numPublic, numPrivate, numTry, numCatch
-    
-    
+	numBytes = 0
+	numPublic = 0
+	numPrivate = 0
+	numTry = 0
+	numCatch = 0
+	
+	javaFilez = javaFiles(path)
+	
+	for name in javaFilez:
+		x = examineJavaFile(path + '/' + name)
+		numBytes += x[0]
+		numPublic += x[1]
+		numPrivate += x[2]
+		numTry += x[3]
+		numCatch += x[4]
+		
+	for sub in subDirs(path):
+		y = examineFolder(path + '/' + sub)
+		numBytes += x[0]
+		numPublic += x[1]
+		numPrivate += x[2]
+		numTry += x[3]
+		numCatch += x[4]
+		
+		
+	return numBytes, numPublic, numPrivate, numTry, numCatch
+	
+def printOutput(path):
 
-#print(examineJavaFile(sys.argv[1]))
-
-
+    x = examineFolder(path)
+	print path + '\t' + x[0] + 'bytes' + '\t' + x[1] + 'public' + '\t' + x[2] + 'private' + '\t' + x[3] + 'try' + '\t' + x[4] + 'catch' + '\n'
+	
+	for sub in subDirs(path):
+	    printOutput(path + '/' + sub)
+	    
