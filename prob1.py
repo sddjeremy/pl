@@ -2,11 +2,11 @@ import os
 import sys
 
 # Returns a list of the names of all immediate subdirectories of a directory.
-def subdirs(path):
+def subDirs(path):
     return [x for x in os.listdir(path) if x not in [".",".."] and os.path.isdir(path + "/" + x)]
 
 # Returns a list of the names of all .java files in a directory.
-def javafiles(path):
+def javaFiles(path):
     return [x for x in os.listdir(path) if len(x) >= 5 and x[-5:] == ".java" and not os.path.isdir(path + "/" + x)]
 
 # Returns whether string a starts with string b
@@ -63,4 +63,36 @@ def examineJavaFile(path):
     return (countPublic, countPrivate, countTry, countCatch)
 
 
-print(examineJavaFile(sys.argv[1]))
+def examineFolder(path):
+	numBytes = 0
+	numPublic = 0
+	numPrivate = 0
+	numTry = 0
+	numCatch = 0
+	
+	javaFilez = javaFiles(path)
+	
+	for name in javaFilez:
+		x = examineJavaFile(path + '/' + name)
+		numBytes += x[0]
+		numPublic += x[1]
+		numPrivate += x[2]
+		numTry += x[3]
+		numCatch += x[4]
+		
+	for sub in subDirs(path):
+		y = examineFolder(path + '/' + sub)
+		numBytes += x[0]
+		numPublic += x[1]
+		numPrivate += x[2]
+		numTry += x[3]
+		numCatch += x[4]
+		
+		
+	return numBytes, numPublic, numPrivate, numTry, numCatch
+	
+	
+
+#print(examineJavaFile(sys.argv[1]))
+
+
