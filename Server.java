@@ -1,6 +1,7 @@
 import java.io.*;
 import java.lang.Thread.*;
 import java.util.HashSet;
+import java.util.concurrent.*;
 
 class constants {
     public static final int A = 0;
@@ -138,12 +139,13 @@ class Account {
 // You will need to movify it to make it a task,
 // so it can be given to an Executor thread pool.
 //
-class Worker {
+class Worker implements Runnable {
     private static final int A = constants.A;
     private static final int Z = constants.Z;
     private static final int numLetters = constants.numLetters;
 
     private Account[] accounts;
+    private Account[] cache;
     private String transaction;
 
     // TO DO: The sequential version of Worker peeks at accounts
@@ -157,23 +159,31 @@ class Worker {
 
     public Worker(Account[] allAccounts, String trans) {
         accounts = allAccounts;
+        cache = new Account[accounts.length];
         transaction = trans;
     }
+
+    // Accesses an account in the cache. If the account is not present, it is loaded from the master list.
+    private Account getCached(int accountNum)
+    {
+        if(cache[accountNum] == null)
+        {
+            cache[accountNum] = new Account(accounts[accountNum].peek());
+        }
+        return cache[accountNum];
+    }
     
-    // TO DO: parseAccount currently returns a reference to an account.
-    // You probably want to change it to return a reference to an
-    // account *cache* instead.
-    //
+    // Uses the account cache, not the master copy
     private Account parseAccount(String name) {
         int accountNum = (int) (name.charAt(0)) - (int) 'A';
         if (accountNum < A || accountNum > Z)
             throw new InvalidTransactionError();
-        Account a = accounts[accountNum];
+        Account a = getCached(accountNum);
         for (int i = 1; i < name.length(); i++) {
             if (name.charAt(i) != '*')
                 throw new InvalidTransactionError();
-            accountNum = (accounts[accountNum].peek() % numLetters);
-            a = accounts[accountNum];
+            accountNum = (getCached(accountNum).peek() % numLetters);
+            a = getCached(accountNum);
         }
         return a;
     }
@@ -189,34 +199,92 @@ class Worker {
     }
 
     public void run() {
-        // tokenize transaction
-        String[] commands = transaction.split(";");
+        boolean failed = true;
+        while(failed)
+        {
+            // tokenize transaction
+            String[] commands = transaction.split(";");
 
-        for (int i = 0; i < commands.length; i++) {
-            String[] words = commands[i].trim().split("\\s");
-            if (words.length < 3)
-                throw new InvalidTransactionError();
-            Account lhs = parseAccount(words[0]);
-            if (!words[1].equals("="))
-                throw new InvalidTransactionError();
-            int rhs = parseAccountOrNum(words[2]);
-            for (int j = 3; j < words.length; j+=2) {
-                if (words[j].equals("+"))
-                    rhs += parseAccountOrNum(words[j+1]);
-                else if (words[j].equals("-"))
-                    rhs -= parseAccountOrNum(words[j+1]);
-                else
+            for (int i = 0; i < commands.length; i++) {
+                String[] words = commands[i].trim().split("\\s");
+                if (words.length < 3)
                     throw new InvalidTransactionError();
+                Account lhs = parseAccount(words[0]);       // Our CACHED left hand side
+                if (!words[1].equals("="))
+                    throw new InvalidTransactionError();
+                int rhs = parseAccountOrNum(words[2]);
+                for (int j = 3; j < words.length; j+=2) {
+                    if (words[j].equals("+"))
+                        rhs += parseAccountOrNum(words[j+1]);
+                    else if (words[j].equals("-"))
+                        rhs -= parseAccountOrNum(words[j+1]);
+                    else
+                        throw new InvalidTransactionError();
+                }
+                // Open relevant accounts for verification
+                // Read for != LHS, Write for LHS
+                int lhsIndex = -1;
+                for(int j = 0; j < cache.length; j++) {
+                    if(cache[j] != null) {
+                        // All for reading
+                        while(true) {
+                            try {
+                                accounts[j].open(false);
+                                //System.out.println(words[0] + " locked for reading " + (char)('A'+j));
+                                break;
+                            }
+                            catch(TransactionAbortException e) {
+                                // Keep on waiting because NO DEADLOCK :D
+                            }
+                        }
+                        // Open the LHS for writing
+                        if(lhs == cache[j])
+                        {
+                            lhsIndex = j;
+                            while(true) {
+                                try {
+                                    accounts[j].open(true);
+                                    //System.out.println(words[0] + " locked for writing " + (char)('A'+j));
+                                    break;
+                                }
+                                catch(TransactionAbortException e) {
+                                    // Keep on waiting because NO DEADLOCK :D
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Verify all opened accounts
+                failed = false;
+                for(int j = 0; j < cache.length && !failed; j++) {
+                    if(cache[j] != null) {
+                        try {
+                            //System.out.println("Verifying " + (char)('A'+j) + " == " + cache[j].peek());
+                            accounts[j].verify(cache[j].peek());
+                        }
+                        catch(TransactionAbortException e) {
+                            failed = true;
+                        }
+                    }
+                }
+
+                // Commit!
+                if(!failed)
+                {
+                    accounts[lhsIndex].update(rhs);
+                    System.out.println("commit: " + transaction);
+                }
+                
+                // Close all opened accounts
+                for(int j = 0; j < cache.length; j++) {
+                    if(cache[j] != null) {
+                        accounts[j].close();
+                        //System.out.println((char)('A' + lhsIndex) + " closed " + (char)('A'+j));
+                    }
+                }
             }
-            try {
-                lhs.open(true);
-            } catch (TransactionAbortException e) {
-                // won't happen in sequential version
-            }
-            lhs.update(rhs);
-            lhs.close();
         }
-        System.out.println("commit: " + transaction);
     }
 }
 
@@ -241,7 +309,7 @@ public class Server {
     }
 
     public static void main (String args[])
-        throws IOException {
+        throws IOException, InterruptedException {
         accounts = new Account[numLetters];
         for (int i = A; i <= Z; i++) {
             accounts[i] = new Account(Z-i);
@@ -256,11 +324,16 @@ public class Server {
 // following loop to feed tasks to the executor instead of running them
 // directly.  Don't modify the initialization of accounts above, or the
 // output at the end.
+        ExecutorService es = java.util.concurrent.Executors.newFixedThreadPool(26);
 
         while ((line = input.readLine()) != null) {
             Worker w = new Worker(accounts, line);
-            w.run();
+            es.execute(w);
         }
+
+        es.shutdown();
+        es.awaitTermination(60, TimeUnit.HOURS);
+        es.shutdownNow();
 
         System.out.println("final values:");
         dumpAccounts();
